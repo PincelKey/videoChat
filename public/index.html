@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Facebook LIVE - 🔴</title>
+    <style>
+      *{
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body{
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+
+        background: linear-gradient(45deg,green,blue);
+      }
+      .app{
+        width: 60%;
+      }
+
+      .llamada{
+        display: flex;
+        justify-content: center;
+      }
+
+      .screen{
+        width: 50%;
+        background: #fff;
+        padding: 10px;
+        margin: 10px;
+        border-radius: 15px;
+        box-shadow: rgba(0,0,0,0.3) 0 0 10px;
+      }
+      
+      .controls{
+        text-align: center;
+        border-radius: 15px;
+        padding: 5px;
+        background: #fff;
+        margin: 5px;
+      }
+
+      .control{
+        border: none;
+        outline: none;
+        cursor: pointer;
+        border-radius: 10px;
+        padding: 7px 10px;
+        background-color: black;
+        color: #fff;
+      }
+    </style>
+  </head>
+
+  <body>
+    <main class="app">
+      <div class="llamada">
+        <video class="screen" id="remoteVideo" autoplay></video>
+        <video class="screen" id="localVideo" autoplay muted></video>
+      </div>
+      <div class="controls">
+        <input class="control" id="videoCallButton" type="button" disabled value="Video Call"/>
+        <input class="control" id="endCallButton" type="button" disabled value="End Call"/>    
+      </div>
+    </main>
+
+    <script>
+      //Webrtc
+      //Definimos las dependecias de acuerdo al navegador
+      navigator.getUserMedia = navigator.getUserMedia || navigator.mozGetUserMedia || navigator.webkitGetUserMedia;
+      window.RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+      window.RTCIceCandidate = window.RTCIceCandidate || window.mozRTCIceCandidate || window.webkitRTCIceCandidate;
+      window.RTCSessionDescription = window.RTCSessionDescription || window.mozRTCSessionDescription || window.webkitRTCSessionDescription;
+      window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || window.mozSpeechRecognition 
+        || window.msSpeechRecognition || window.oSpeechRecognition;      
+    
+      let config = {
+        wssHost: 'wss://8.8.8.32'
+      };
+
+      let localVideoElem = null,
+          remoteVideoElem = null,
+          videoCallButton = null,
+          endCallButton = null,
+          localVideoStream=null;
+
+      let peerConection = null,
+          wsc = new WebSocket(config.wssHost),
+          peerConnCfg = {'iceServers': 
+            [{'url': 'stun:stun.services.mozilla.com'}, 
+            {'url': 'stun:stun.l.google.com:19302'}]
+          };
+      
+      function pageReady(){
+        //Comprobamos si WebRTC funciona en nuestro navegador
+        if(navigator.getUserMedia){
+
+          //Definición de nuestros elementos
+          videoCallButton = document.getElementById("videoCallButton");
+          endCallButton = document.getElementById("endCallButton");
+          localVideoElem = document.getElementById('localVideo');
+          remoteVideoElem = document.getElementById('remoteVideo'); 
+          
+          //Habilitando la llamada
+          videoCallButton.removeAttribute("disabled");
+          videoCallButton.addEventListener("click", initiateCall);
+          
+        }else{
+          alert("Sorry, Tu navegador no soporta WebRTC")
+        }
+      }
+
+      pageReady(); //Iniciar elementos
+
+      function prepareCall(){
+        //Definimos el punto de conexión
+        peerConection = new RTCPeerConnection(peerConnCfg);
+
+        //Definismo el manejo de eventos del pto. de conexión
+        peerConection.onicecandidate=onIceCandidateHandler;
+        peerConection.onaddstream=onAddStreamHandler;
+      }
+
+      function initiateCall(){
+        //preparamos la llamada
+        prepareCall();
+
+        navigator.getUserMedia({"audio": true, "video": true},function(stream){
+          localVideoStream = stream;
+          localVideoElem.src=URL.createObjectURL(localVideoStream);
+
+          //Añadir el stream a mi punto de conexión para ser transmitido
+          peerConection.addStream(localVideoStream);
+
+          //Creamos y emitimos la oferta de comunicación
+          createAndSendOffer();
+        }, function(error){console.log("Error")});
+      }
+
+      function answerCall(){
+        ///preparamos la llamada
+        prepareCall();
+
+        navigator.getUserMedia({"audio": true, "video": true},function(stream){
+          localVideoStream = stream;
+          localVideoElem.src=URL.createObjectURL(localVideoStream);
+
+          //Añadir el stream a mi punto de conexión para ser transmitido
+          peerConection.addStream(localVideoStream);
+
+          //Creamos y emitimos la oferta de comunicación
+          createAndSendAnswer();
+        }, function(error){console.log("Error")});        
+      }
+
+      wsc.onmessage = function (evt){
+        //Verifificamos si tenemos preparado la llamada
+        if(!peerConection) answerCall();
+        let signal = JSON.parse(evt.data);
+
+        if(signal.sdp){
+          console.log("Recibí SDP del punto remoto");
+          peerConection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+       
+        }else if(signal.candidate){
+          console.log("Recibí un ICECandidate del punto remoto");
+          peerConection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      
+        }
+      }
+      
+      function createAndSendOffer(){
+				//Crear y enviar la oferta
+        var sdpConstraints = { 'mandatory':
+		            {
+		                'OfferToReceiveAudio': true,
+		                'OfferToReceiveVideo': true
+		            }
+		        };
+
+				peerConection.createOffer(sdpConstraints).then(function(sdpOffer){
+					peerConection.setLocalDescription(sdpOffer);
+					wsc.send(JSON.stringify({"sdp": sdpOffer }));
+					console.log("------ SEND OFFER ------");
+				},function(error){
+					console.log(error);
+				});        
+      }
+
+      function createAndSendAnswer(){
+				//Crear y enviar la oferta
+        var sdpConstraints = { 'mandatory':
+		            {
+		                'OfferToReceiveAudio': true,
+		                'OfferToReceiveVideo': true
+		            }
+		        };
+
+				peerConection.createAnswer(sdpConstraints).then(function(sdpAnswer){
+					peerConection.setLocalDescription(sdpAnswer);
+					wsc.send(JSON.stringify({"sdp": sdpAnswer }));
+					console.log("------ SEND ANSWER ------");
+				},function(error){
+					console.log(error);
+				});         
+      }
+      //
+      function onIceCandidateHandler(evt){
+        if (!evt || !evt.candidate) return;
+        wsc.send(JSON.stringify({"candidate": evt.candidate}));
+      }
+
+      function onAddStreamHandler(event){
+        //Desactiva la posibilidad de llamar
+        videoCallButton.setAttribute("disabled", true);
+        remoteVideoElem.src=URL.createObjectURL(event.stream);        
+      }
+      
+      
+    </script>
+  </body>
+</html>
