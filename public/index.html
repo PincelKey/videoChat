@@ -33,6 +33,19 @@
         margin: 10px;
         border-radius: 15px;
         box-shadow: rgba(0,0,0,0.3) 0 0 10px;
+        position: relative;
+      }
+
+      #localVideo::after{
+        width: 200px;
+        height: 20px;
+        content: "Local";
+        background: black;
+        color: #ffffff;
+        padding: 5px;
+        border-radius: 10px;
+        margin: 2px;
+        position: absolute;
       }
       
       .controls{
@@ -58,8 +71,8 @@
   <body>
     <main class="app">
       <div class="llamada">
+        <video class="screen" id="localVideo" autoplay muted></video>        
         <video class="screen" id="remoteVideo" autoplay></video>
-        <video class="screen" id="localVideo" autoplay muted></video>
       </div>
       <div class="controls">
         <input class="control" id="videoCallButton" type="button" disabled value="Video Call"/>
